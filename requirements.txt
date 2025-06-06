@@ -1,3 +1,4 @@
 streamlit>=1.26
 graphviz
 pillow
+streamlit-drawable-canvas
