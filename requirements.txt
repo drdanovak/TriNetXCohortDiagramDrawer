@@ -3,3 +3,5 @@ graphviz
 pillow
 streamlit-drawable-canvas
 pandas
+uuid
+json
