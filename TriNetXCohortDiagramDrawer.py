@@ -27,7 +27,6 @@ boxes_df = pd.DataFrame(st.session_state.boxes)
 edited_df = st.data_editor(
     boxes_df[["label", "content", "color"]],
     use_container_width=True,
-    column_config={"color": st.column_config.ColorColumn("Box Color")},
     hide_index=True,
     num_rows="dynamic"
 )
@@ -92,7 +91,6 @@ if uploaded:
     boxes = json.load(uploaded)
     st.session_state.boxes = boxes
 
-st.caption("Tip: Use the sidebar table to edit box text/colors. Drag boxes on the canvas to arrange your diagram. Save/load with JSON as needed.")
+st.caption("Tip: Use the sidebar table to edit box text/colors (hex codes). Drag boxes on the canvas to arrange your diagram. Save/load with JSON as needed.")
 
 # (Optional: Add lines/arrows and richer box editing on request!)
-
