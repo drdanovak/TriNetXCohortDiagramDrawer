@@ -1,79 +1,98 @@
 import streamlit as st
+from streamlit_drawable_canvas import st_canvas
+import pandas as pd
 import json
-from graphviz import Digraph
-import tempfile
+import uuid
 
-# ---- Initialize session state ----
-if "diagram_data" not in st.session_state:
-    st.session_state.diagram_data = {
-        "title": "TriNetX Study",
-        "sections": [
-            {"id": "top", "label": "Top Box (e.g., Database, Date, n)", "content": "TriNetX\nUS Collaborative Network\nSeptember 2024\n(n=117,058,583)"},
-            {"id": "criteria", "label": "Inclusion/Exclusion Criteria", "content": "Age >45\nExclusions: AD Comorbidities..."},
-            {"id": "control", "label": "Control Group", "content": "Total: n=3,767,962\nAfter PSM: n=1,362,224"},
-            {"id": "statin", "label": "Statin Group", "content": "Total: n=2,562,828\nAfter PSM: n=1,362,224"},
-            {"id": "outcomes", "label": "Outcomes", "content": "No Statin AD Outcome: 5980 (44%)\nStatin AD Outcome: 1805 (13%)\nRisk Diff: -31%"},
-        ],
-        "edges": [
-            ["top", "criteria"], ["criteria", "control"], ["criteria", "statin"], ["control", "outcomes"], ["statin", "outcomes"]
-        ]
+# Helper: Generate unique ID for each box
+def get_new_id():
+    return str(uuid.uuid4())[:8]
+
+st.title("Hybrid Cohort Diagram Builder")
+
+# ---- Sidebar/Table for Editing Boxes ----
+st.sidebar.header("📝 Edit Boxes")
+if "boxes" not in st.session_state:
+    # Example starting boxes: customize these as needed
+    st.session_state.boxes = [
+        {"id": get_new_id(), "label": "Dataset", "content": "TriNetX\nUS Collaborative Network\n(n=117,058,583)", "x": 100, "y": 60, "w": 260, "h": 90, "color": "#e3e6fa"},
+        {"id": get_new_id(), "label": "Criteria", "content": "Age >45\nExclude AD Comorbidities", "x": 100, "y": 200, "w": 260, "h": 80, "color": "#fbeee6"},
+        {"id": get_new_id(), "label": "Control Group", "content": "Control Group\nn=1,362,224", "x": 40, "y": 340, "w": 200, "h": 80, "color": "#d6f5e3"},
+        {"id": get_new_id(), "label": "Statin Group", "content": "Statin Group\nn=1,362,224", "x": 260, "y": 340, "w": 200, "h": 80, "color": "#ffe5e5"},
+        {"id": get_new_id(), "label": "Outcomes", "content": "No Statin: 44%\nStatin: 13%\nRisk Diff: -31%", "x": 150, "y": 500, "w": 260, "h": 80, "color": "#fffac8"}
+    ]
+
+# Convert boxes to dataframe for easy editing
+boxes_df = pd.DataFrame(st.session_state.boxes)
+edited_df = st.data_editor(
+    boxes_df[["label", "content", "color"]],
+    use_container_width=True,
+    column_config={"color": st.column_config.ColorColumn("Box Color")},
+    hide_index=True,
+    num_rows="dynamic"
+)
+# Sync edits back to state
+for i, row in edited_df.iterrows():
+    st.session_state.boxes[i]["label"] = row["label"]
+    st.session_state.boxes[i]["content"] = row["content"]
+    st.session_state.boxes[i]["color"] = row["color"]
+
+# ---- Canvas ----
+st.header("Canvas: Drag, Move, Resize Boxes")
+canvas_boxes = [
+    {
+        "type": "rect",
+        "left": box["x"],
+        "top": box["y"],
+        "width": box["w"],
+        "height": box["h"],
+        "stroke": "#444",
+        "fill": box["color"],
+        "strokeWidth": 2,
+        "name": box["label"],
+        "text": box["content"],
+        "id": box["id"],
     }
+    for box in st.session_state.boxes
+]
 
-# ---- Sidebar: Save/Load ----
+canvas_result = st_canvas(
+    fill_color="#eeeeee",
+    stroke_width=2,
+    stroke_color="#333333",
+    background_color="#fafafc",
+    width=600,
+    height=700,
+    initial_drawing={"objects": canvas_boxes, "version": "4.4.0"},
+    drawing_mode="transform",  # Drag, move, resize
+    key="canvas"
+)
+
+# Update positions/sizes if moved on canvas
+if canvas_result.json_data and "objects" in canvas_result.json_data:
+    for obj in canvas_result.json_data["objects"]:
+        for box in st.session_state.boxes:
+            if "id" in obj and obj["id"] == box["id"]:
+                box["x"] = obj["left"]
+                box["y"] = obj["top"]
+                box["w"] = obj["width"]
+                box["h"] = obj["height"]
+
+# ---- Save/Load Diagram ----
 st.sidebar.header("💾 Save/Load Diagram")
-if st.sidebar.button("Download Diagram Data"):
+if st.sidebar.button("Save as JSON"):
     st.sidebar.download_button(
-        label="Download JSON",
-        data=json.dumps(st.session_state.diagram_data, indent=2),
-        file_name="cohort_diagram.json",
-        mime="application/json"
+        "Download Diagram JSON",
+        data=json.dumps(st.session_state.boxes, indent=2),
+        file_name="diagram_boxes.json"
     )
 
-uploaded = st.sidebar.file_uploader("Upload JSON to Load Diagram", type=["json"])
-if uploaded is not None:
-    st.session_state.diagram_data = json.load(uploaded)
+uploaded = st.sidebar.file_uploader("Load Diagram JSON", type=["json"])
+if uploaded:
+    boxes = json.load(uploaded)
+    st.session_state.boxes = boxes
 
-# ---- Main UI: Edit Diagram ----
-st.title("🧬 Cohort Diagram Builder (TriNetX Style)")
+st.caption("Tip: Use the sidebar table to edit box text/colors. Drag boxes on the canvas to arrange your diagram. Save/load with JSON as needed.")
 
-# Edit the title
-st.session_state.diagram_data["title"] = st.text_input("Diagram Title", st.session_state.diagram_data["title"])
-
-# Edit sections
-st.header("Edit Diagram Sections")
-for section in st.session_state.diagram_data["sections"]:
-    section["content"] = st.text_area(section["label"], section["content"], height=100)
-
-# Add/remove section capability
-if st.button("Add Section"):
-    st.session_state.diagram_data["sections"].append({"id": f"custom{len(st.session_state.diagram_data['sections'])}", "label": "Custom Section", "content": ""})
-
-remove_section = st.selectbox("Remove Section", options=[s["label"] for s in st.session_state.diagram_data["sections"]])
-if st.button("Remove Selected Section"):
-    st.session_state.diagram_data["sections"] = [s for s in st.session_state.diagram_data["sections"] if s["label"] != remove_section]
-
-# Edit edges (connections between boxes)
-st.header("Edit Connections")
-edges_str = "\n".join([f"{e[0]} -> {e[1]}" for e in st.session_state.diagram_data["edges"]])
-edges_str = st.text_area("Box Connections (One per line, format: boxid -> boxid)", edges_str, height=80)
-st.session_state.diagram_data["edges"] = [line.strip().split("->") for line in edges_str.split("\n") if "->" in line]
-
-# ---- Generate Diagram with Graphviz ----
-dot = Digraph(comment=st.session_state.diagram_data["title"])
-for s in st.session_state.diagram_data["sections"]:
-    dot.node(s["id"], s["content"], shape="box", style="filled", fillcolor="white", fontsize="12", fontname="Arial")
-
-for e in st.session_state.diagram_data["edges"]:
-    if len(e) == 2:
-        dot.edge(e[0].strip(), e[1].strip())
-
-st.subheader("Preview: Cohort Diagram")
-st.graphviz_chart(dot)
-
-# ---- Export as PNG (Optional Advanced Feature) ----
-# Export PNG: Graphviz can save to file, then reload and serve as image.
-if st.button("Export Diagram as PNG"):
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-        dot.render(tmpfile.name, format="png")
-        st.image(tmpfile.name + ".png")
+# (Optional: Add lines/arrows and richer box editing on request!)
 
